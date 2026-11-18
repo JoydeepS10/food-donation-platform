@@ -37,3 +37,24 @@
 - Validation: Redocly lint passes with only informational warnings (local server URL,
   license URL, health endpoint has no 4xx response).
 - Open: frontend/backend plans; no application code or dependencies yet.
+
+## 2026-11-18 — Phase 3: backend plan and security notes
+
+- Wrote `docs/04-backend/BACKEND_PLAN.md`: principles, `backend/src` folder layout, Prisma
+  schema outline, auth and role-guard design, local/S3 storage interface, error handling,
+  testing approach, the 25-operation ownership table, the phase table with a Slice column,
+  testable acceptance criteria for phases 11–19, and per-slice frontend handoff checklists.
+- Wrote `docs/04-backend/SECURITY_NOTES.md` as a living checklist with slice tags, a
+  deployment checklist and accepted MVP risks.
+- Recorded three decisions: slice-based backend delivery order, in-app notifications only
+  (no email provider), and exact verification document types (`other` is additional only).
+- Confirmed `multer` + `@types/multer` as the only approved runtime addition for Slice 4;
+  `node:test` and `scrypt` remain the testing and password-hashing choices.
+- Confirmed production storage is an S3-compatible private bucket. The concrete S3 client
+  package still needs owner approval before phase 19.
+- Kept the phase list and slice grouping exactly as agreed. Slice order is 1 (11, 12, 13),
+  2 (16), 3 (17), 4 (14, 15), 5 (18), 6 (19).
+- Open: no application code or dependencies installed; implementation starts with phase 11.
+  `API_NOTES.md`/`PRODUCT_PLAN.md` still describe email and `DATABASE_DESIGN.md` still
+  describes `other` document substitution; the new decision entries govern the MVP until
+  those documents are updated with owner agreement.

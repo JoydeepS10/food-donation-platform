@@ -56,7 +56,7 @@ Cardinalities:
 | `notification_type` | `organisation_verified`, `organisation_rejected`, `donation_claimed`, `claim_released`, `donation_cancelled`, `pickup_confirmed`, `donation_completed`, `donation_expired` | `notifications.type` |
 | `auth_token_type` | `email_verification`, `password_reset` | `auth_tokens.type` |
 
-Required-document checklists are application rules, not enum values: donors normally supply business/institution authorisation plus a food-safety licence; NGOs supply NGO registration plus a food-safety licence. The `other` type allows the admin to accept an equivalent document.
+Required-document checklists are application rules, not enum values. A donor must have a current `food_safety_licence` plus either a current `business_registration` or `institution_authorisation`. An NGO must have a current `food_safety_licence` plus `ngo_registration`. These exact types are required for approval. `other` is an additional document only and never substitutes for a missing required type.
 
 ## 4. Tables
 
@@ -242,12 +242,12 @@ Constraints and indexes:
 | `donation_id` | `uuid` | NULL, FK `donations(id)` SET NULL |
 | `claim_id` | `uuid` | NULL, FK `claims(id)` SET NULL |
 | `read_at` | `timestamptz` | NULL |
-| `emailed_at` | `timestamptz` | NULL; best-effort delivery marker |
+| `emailed_at` | `timestamptz` | NULL; unused and always null (no email delivery in the MVP) |
 | `created_at` | `timestamptz` | NOT NULL, default `now()` |
 
 - Index `(user_id, created_at DESC)` for the inbox.
 - Partial index `(user_id) WHERE read_at IS NULL` for unread counts.
-- In-app notification rows are written in the same transaction as the business change. Email is sent after commit; failure leaves `emailed_at` null and never rolls back the action.
+- In-app notification rows are written in the same transaction as the business change. There is no email delivery in the MVP; `emailed_at` is unused and always null.
 
 ### 4.8 `sessions`
 
@@ -313,13 +313,13 @@ Constraints and indexes:
 
 ### 6.1 Claim a donation
 
-1. Authenticate the session; confirm the user is an active NGO account whose email and organisation are verified.
+1. Authenticate the session; confirm the user is an active NGO account whose organisation is verified.
 2. In one transaction, conditionally update the donation from `available` to `claimed` only when `pickup_window_end > now()`. The update takes a row lock.
 3. If no row was updated:
    - If an active claim already exists for this same NGO, return that claim as an idempotent success.
    - Otherwise return `409 DONATION_ALREADY_CLAIMED` or `409 DONATION_EXPIRED` without any address data.
 4. Insert the active claim, the status-history row and the donor notification.
-5. Commit, then attempt email delivery.
+5. Commit.
 6. The partial unique index on active claims protects against service regressions.
 
 ### 6.2 Release a claim
@@ -356,7 +356,7 @@ Constraints and indexes:
 
 1. At most one active claim per donation, enforced by a partial unique index and the claim transaction.
 2. A claim can only reference an NGO organisation and a donation owned by a donor organisation; checked in the service layer.
-3. Only verified organisations with verified email may create donations or claims; checked on every write.
+3. Only verified organisations may create donations or claims; checked on every write.
 4. `pickup_window_start < pickup_window_end <= best_before`; quantity is positive.
 5. Cancelled donations and claims always have an actor, timestamp and reason.
 6. A completed claim always has a pickup confirmation time before its completion time.
@@ -387,4 +387,4 @@ Constraints and indexes:
 
 ## 10. Future extensions (not MVP)
 
-Multi-user organisations (membership table replacing the unique organisation login), suspension and document renewal, multiple donation photos, geolocation and distance search, ratings/reports, an email outbox with retries, a general admin audit log, soft deletion and retention policies. The current schema leaves room for these without changing the core lifecycle.
+Multi-user organisations (membership table replacing the unique organisation login), suspension and document renewal, multiple donation photos, geolocation and distance search, ratings/reports, a general admin audit log, soft deletion and retention policies. The current schema leaves room for these without changing the core lifecycle.

@@ -187,8 +187,8 @@ endpoint.
 
 ## 10. Scope notes
 
-- Notification delivery is in-app plus best-effort email; there is no real-time transport in
-  this contract.
+- Notification delivery is in-app only: notifications are durable rows and there is no email
+  channel or real-time transport in this contract. `Notification.emailedAt` is always `null`.
 - Admin global claim listing and operational dashboard endpoints are not part of slices 1–5.
   Admin oversight of a specific donation is available through `GET /donations` and
   `GET /donations/{donationId}` with the admin projection, plus the cancel endpoint.

@@ -12,7 +12,7 @@ This product is a responsive web application for one city that closes that loop:
 
 **Goals**
 
-- **Trust:** only email-verified, admin-verified organisations can post or claim.
+- **Trust:** only admin-verified organisations can post or claim.
 - **Speed:** a donor can publish a valid listing in under three minutes; an NGO can claim in two actions.
 - **Clarity:** one unambiguous donation lifecycle with no double claims and no silent expiration of an active commitment.
 - **Accountability:** every status change and every admin decision has an actor, a timestamp and, where relevant, a reason.
@@ -44,7 +44,7 @@ An organisation account has exactly **one login** in the MVP. Organisation state
 
 - **A1 — Public browse:** available donations sorted by soonest pickup deadline, filterable by city, area and vegetarian flag, paginated.
 - **A2 — Masked detail:** title, description, quantity, unit, vegetarian flag, best-before, pickup window, area/city, donor display name and optional photo. Exact address, postcode, instructions and contact details are hidden.
-- **A3 — Authentication:** email/password registration and login, email verification, password reset, logout, session expiry. Public browsing needs no account.
+- **A3 — Authentication:** email/password registration and login, logout, session expiry. Public browsing needs no account.
 - **A4 — Organisation onboarding:** organisation type, name, contact details, address; upload of required verification documents; submission for review; verification status and rejection reason visible to the owner.
 - **A5 — Responsive shell:** mobile-first layout, accessible forms, clear loading, empty and error states.
 
@@ -56,7 +56,7 @@ An organisation account has exactly **one login** in the MVP. Organisation state
 - **D4 — Manage after claim:** no content edits; may extend the pickup end (not beyond best-before) and notify the claimant; may cancel with a reason.
 - **D5 — Claim awareness:** see the claiming NGO's name and contact details, the pickup window and the claim status.
 - **D6 — Completion:** see pickup confirmation and confirm completion; otherwise completion happens automatically 48 hours after pickup confirmation.
-- **D7 — History and notifications:** past donations, status history and in-app/email notifications.
+- **D7 — History and notifications:** past donations, status history and in-app notifications.
 
 ### 4.3 NGO features
 
@@ -64,7 +64,7 @@ An organisation account has exactly **one login** in the MVP. Organisation state
 - **N2 — Atomic claim:** confirm and claim in one transaction; first successful claim wins; full address, instructions and donor contact become visible only after success.
 - **N3 — Claim management:** see active and past claims; release a claim with a reason before the pickup window starts.
 - **N4 — Pickup:** mark picked up once the pickup window has started; late pickup is allowed with a warning.
-- **N5 — History and notifications:** past collections, outcomes and in-app/email notifications.
+- **N5 — History and notifications:** past collections, outcomes and in-app notifications.
 
 ### 4.4 Admin features
 
@@ -77,7 +77,7 @@ An organisation account has exactly **one login** in the MVP. Organisation state
 ### 4.5 Platform features
 
 - **P1 — Role-based access control** on every endpoint and page.
-- **P2 — Notifications:** durable in-app notification inbox plus best-effort email for defined events.
+- **P2 — Notifications:** durable in-app notification inbox for defined events. Notifications are stored as rows; there is no email channel.
 - **P3 — Scheduled jobs:** expire unclaimed donations at pickup-window end; auto-complete picked-up donations after 48 hours; idempotent and safe to re-run.
 - **P4 — Audit trail:** append-only donation status history; claim and document history retained.
 - **P5 — Secure uploads:** type and size validation, private document storage, random storage keys.
@@ -86,7 +86,7 @@ An organisation account has exactly **one login** in the MVP. Organisation state
 
 ## 5. Product rules
 
-1. Both donors and NGOs must have a verified email and a verified organisation before posting or claiming.
+1. Both donors and NGOs must have a verified organisation before posting or claiming.
 2. One login per organisation; admins are seeded and have no organisation.
 3. A donation has at most one active claim. Claiming is atomic and idempotent for retries by the same NGO.
 4. The exact pickup address, instructions and contact details are revealed only to the NGO holding the active claim; the donor and admin always see their own/all data.
@@ -115,18 +115,18 @@ An organisation account has exactly **one login** in the MVP. Organisation state
 - Student project: small scope, short timeline, professional quality rather than production scale.
 - One city, English, metric units, no currency. Free donations, pickup only.
 - PostgreSQL with Prisma, as scaffolded. No unapproved libraries.
-- Email delivery is best effort; the in-app notification is the durable record.
+- Notifications are in-app only; the notification row is the durable record.
 - UTC in the database, local time in the UI.
 - The platform coordinates handover; donors remain responsible for food safety and NGOs inspect food at pickup.
 
 ## 8. Non-functional requirements
 
-- **Security:** password hashing, hashed session/reset tokens, secure cookies, CSRF protection for cookie-authenticated writes, rate limiting on auth and claim endpoints, role checks on every route, private document access.
+- **Security:** password hashing, hashed session tokens, secure cookies, CSRF protection for cookie-authenticated writes, rate limiting on auth and claim endpoints, role checks on every route, private document access.
 - **Privacy:** collect only necessary personal data; mask addresses and contacts publicly; do not log secrets, tokens or full addresses.
 - **Accessibility:** WCAG 2.1 AA target for core flows — labels, focus states, contrast, keyboard operation, meaningful errors.
 - **Responsive design:** usable from 360 px; primary breakpoints at 360, 768 and 1280 px.
 - **Performance:** paginated lists, lazy-loaded images, no unbounded queries; core pages usable on a throttled mobile connection.
-- **Reliability:** state changes and their history/notifications commit together; scheduled jobs are idempotent; email failure never rolls back a business action.
+- **Reliability:** state changes and their history/notifications commit together; scheduled jobs are idempotent.
 - **Testing:** unit tests for status rules and validation; integration tests for claim concurrency and permissions; one end-to-end happy-path test.
 - **Observability:** structured server logs with request IDs, no PII; clear user-facing error codes.
 
