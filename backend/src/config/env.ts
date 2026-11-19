@@ -18,14 +18,20 @@ const booleanFromString = z.preprocess((value) => {
   return value;
 }, z.boolean());
 
+const frontendUrlSchema = z
+  .string()
+  .url('FRONTEND_URL must be an absolute URL.')
+  .refine((value) => {
+    const protocol = new URL(value).protocol;
+    return protocol === 'http:' || protocol === 'https:';
+  }, 'FRONTEND_URL must use http or https.')
+  .transform((value) => new URL(value).origin);
+
 const rawEnvSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     PORT: z.coerce.number().int().min(1).max(65535).default(4000),
-    FRONTEND_URL: z
-      .string()
-      .url('FRONTEND_URL must be an absolute URL.')
-      .transform((value) => new URL(value).origin),
+    FRONTEND_URL: frontendUrlSchema,
     APP_VERSION: z.string().min(1).default('0.1.0'),
     LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
     SESSION_TTL_HOURS: z.coerce.number().int().positive().default(168),
@@ -47,6 +53,14 @@ const rawEnvSchema = z
         code: 'custom',
         path: ['COOKIE_SECURE'],
         message: 'COOKIE_SECURE must be true in production.',
+      });
+    }
+
+    if (env.NODE_ENV === 'production' && new URL(env.FRONTEND_URL).protocol !== 'https:') {
+      context.addIssue({
+        code: 'custom',
+        path: ['FRONTEND_URL'],
+        message: 'FRONTEND_URL must use https in production.',
       });
     }
   })

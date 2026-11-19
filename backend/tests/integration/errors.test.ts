@@ -1,8 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import express from 'express';
+import { createErrorHandler } from '../../src/middleware/error-handler.ts';
+import { requestId } from '../../src/middleware/request-id.ts';
+import { createLogger } from '../../src/utils/logger.ts';
 import { isRecord } from '../helpers/json.ts';
 import { testConfig } from '../helpers/test-config.ts';
-import { startTestServer } from '../helpers/test-server.ts';
+import { startTestApp, startTestServer } from '../helpers/test-server.ts';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -83,4 +87,36 @@ test('no future-slice route is mounted', async (t) => {
     const response = await fetch(`${server.baseUrl}${path}`);
     assert.equal(response.status, 404, `Expected 404 for ${path}`);
   }
+});
+
+test('an unexpected error returns INTERNAL_ERROR without a stack trace', async (t) => {
+  const logs: string[] = [];
+  const logger = createLogger('error', (line) => {
+    logs.push(line);
+  });
+
+  const app = express();
+  app.use(requestId);
+  app.get('/boom', () => {
+    throw new Error('stack-secret-marker');
+  });
+  app.use(createErrorHandler(logger));
+
+  const server = await startTestApp(app);
+  t.after(async () => {
+    await server.close();
+  });
+
+  const response = await fetch(`${server.baseUrl}/boom`);
+  assert.equal(response.status, 500);
+
+  const body: unknown = await response.json();
+  const error = readErrorBody(body);
+  assert.equal(error.code, 'INTERNAL_ERROR');
+  assert.equal(error.message, 'An unexpected error occurred.');
+  assert.equal(response.headers.get('x-request-id'), error.requestId);
+
+  const serialized = JSON.stringify(body);
+  assert.doesNotMatch(serialized, /stack-secret-marker|Error:|at .*:\d+:\d+/);
+  assert.equal(logs.some((line) => line.includes('request.unhandled_error')), true);
 });

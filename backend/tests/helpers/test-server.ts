@@ -1,5 +1,6 @@
 import { once } from 'node:events';
 import type { Server } from 'node:http';
+import type { Express } from 'express';
 import { createApp } from '../../src/app.ts';
 import type { AppConfig } from '../../src/config/env.ts';
 import type { ReadinessCheck } from '../../src/controllers/health.controller.ts';
@@ -22,11 +23,7 @@ function closeServer(server: Server): Promise<void> {
   });
 }
 
-export async function startTestServer(
-  config: AppConfig,
-  readiness?: ReadinessCheck,
-): Promise<TestServer> {
-  const app = createApp(config, readiness);
+export async function startTestApp(app: Express): Promise<TestServer> {
   const server = app.listen(0, '127.0.0.1');
   await once(server, 'listening');
 
@@ -41,4 +38,11 @@ export async function startTestServer(
     baseUrl: `http://127.0.0.1:${address.port}`,
     close: () => closeServer(server),
   };
+}
+
+export async function startTestServer(
+  config: AppConfig,
+  readiness?: ReadinessCheck,
+): Promise<TestServer> {
+  return startTestApp(createApp(config, readiness));
 }
