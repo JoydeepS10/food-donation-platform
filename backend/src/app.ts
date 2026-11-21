@@ -3,6 +3,7 @@ import type { Express } from 'express';
 import { API_PREFIX, JSON_BODY_LIMIT } from './config/constants.ts';
 import type { AppConfig } from './config/env.ts';
 import type { ReadinessCheck } from './controllers/health.controller.ts';
+import { createDefaultDatabaseReadiness } from './db/readiness.ts';
 import { createCors } from './middleware/cors.ts';
 import { createErrorHandler } from './middleware/error-handler.ts';
 import { notFound } from './middleware/not-found.ts';
@@ -15,6 +16,7 @@ import { createLogger } from './utils/logger.ts';
 export function createApp(config: AppConfig, readiness?: ReadinessCheck): Express {
   const app = express();
   const logger = createLogger(config.LOG_LEVEL);
+  const readinessCheck = readiness ?? createDefaultDatabaseReadiness(logger);
 
   app.disable('x-powered-by');
 
@@ -28,7 +30,7 @@ export function createApp(config: AppConfig, readiness?: ReadinessCheck): Expres
   app.use(createCors(config));
   app.use(express.json({ limit: JSON_BODY_LIMIT }));
 
-  app.use(API_PREFIX, createApiRouter(config, readiness));
+  app.use(API_PREFIX, createApiRouter(config, readinessCheck));
 
   app.use(notFound);
   app.use(createErrorHandler(logger));

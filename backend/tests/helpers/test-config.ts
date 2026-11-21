@@ -9,6 +9,7 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     LOG_LEVEL: 'error',
     SESSION_TTL_HOURS: 168,
     COOKIE_SECURE: false,
+    DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/food_donation_test',
     JOBS_ENABLED: false,
     STORAGE_DRIVER: 'local',
     LOCAL_UPLOAD_DIR: 'var/uploads',

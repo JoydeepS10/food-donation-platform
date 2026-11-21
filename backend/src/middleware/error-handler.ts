@@ -2,6 +2,7 @@ import type { ErrorRequestHandler, Response } from 'express';
 import type { ErrorEnvelope, FieldError } from '../types/errors.ts';
 import { AppError } from '../utils/app-error.ts';
 import type { Logger } from '../utils/logger.ts';
+import { describeErrorForLog } from '../utils/safe-error-log.ts';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -68,7 +69,7 @@ export function createErrorHandler(logger: Logger): ErrorRequestHandler {
       requestId,
       method: req.method,
       path: req.path,
-      error: error instanceof Error ? (error.stack ?? error.message) : String(error),
+      ...describeErrorForLog(error),
     });
 
     sendError(res, 500, 'INTERNAL_ERROR', 'An unexpected error occurred.', requestId);

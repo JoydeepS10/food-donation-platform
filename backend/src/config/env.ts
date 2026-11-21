@@ -36,7 +36,13 @@ const rawEnvSchema = z
     LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
     SESSION_TTL_HOURS: z.coerce.number().int().positive().default(168),
     COOKIE_SECURE: booleanFromString.optional(),
-    DATABASE_URL: z.string().min(1).optional(),
+    DATABASE_URL: z
+      .string()
+      .min(1)
+      .refine(
+        (value) => value.startsWith('postgresql://') || value.startsWith('postgres://'),
+        'DATABASE_URL must be a PostgreSQL connection string.',
+      ),
     JOBS_ENABLED: booleanFromString.default(true),
     STORAGE_DRIVER: z.enum(['local', 's3']).default('local'),
     LOCAL_UPLOAD_DIR: z.string().min(1).default('var/uploads'),

@@ -42,7 +42,7 @@ export async function startTestApp(app: Express): Promise<TestServer> {
 
 export async function startTestServer(
   config: AppConfig,
-  readiness?: ReadinessCheck,
+  readiness: ReadinessCheck = async () => true,
 ): Promise<TestServer> {
   return startTestApp(createApp(config, readiness));
 }
