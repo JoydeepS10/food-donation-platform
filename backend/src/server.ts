@@ -3,6 +3,7 @@ import { createApp } from './app.ts';
 import { loadEnv } from './config/env.ts';
 import type { AppConfig } from './config/env.ts';
 import { createLogger } from './utils/logger.ts';
+import { describeErrorForLog } from './utils/safe-error-log.ts';
 
 function main(): void {
   let config: AppConfig;
@@ -26,7 +27,7 @@ function main(): void {
 
   server.on('error', (error) => {
     logger.error('server.error', {
-      error: error instanceof Error ? (error.stack ?? error.message) : String(error),
+      error: describeErrorForLog(error),
     });
     process.exitCode = 1;
   });
@@ -44,7 +45,7 @@ function main(): void {
     server.close((error) => {
       if (error) {
         logger.error('server.shutdown_failed', {
-          error: error instanceof Error ? (error.stack ?? error.message) : String(error),
+          error: describeErrorForLog(error),
         });
         process.exitCode = 1;
       }

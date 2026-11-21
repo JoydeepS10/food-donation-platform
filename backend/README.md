@@ -5,10 +5,11 @@ enforces the rules and serves the endpoints defined in `docs/02-api-contract/ope
 Its source lives in `src/`, its database schema and migrations in `prisma/`, and the rules
 for working here are in this folder's `AGENTS.md`.
 
-## Phase 11 status
+## Phase 12 status
 
-Only the foundation and `GET /api/v1/health` are implemented. No database, auth, donation,
-claim, organisation, admin or notification routes are mounted yet.
+Only the foundation and `GET /api/v1/health` are served. The full database schema, the
+migrations and the development seed exist; no auth, donation, claim, organisation, admin or
+notification routes are mounted yet.
 
 ## Setup
 
@@ -19,7 +20,7 @@ cp .env.example .env        # Windows PowerShell: Copy-Item .env.example .env
 ```
 
 `FRONTEND_URL` is required and must be the exact browser origin that calls the API with
-credentials. `DATABASE_URL` is optional in phase 11 and becomes required in phase 12.
+credentials. `DATABASE_URL` is required and must be a PostgreSQL connection string.
 
 ## Scripts
 

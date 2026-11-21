@@ -1,5 +1,7 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { createApp } from '../../src/app.ts';
 import { prisma } from '../../src/db/prisma.ts';
 import { createDatabaseReadiness, createPrismaDatabasePing } from '../../src/db/readiness.ts';
@@ -88,7 +90,10 @@ const CHECK_CONSTRAINTS = [
   'claims_cancelled_fields_check',
   'claims_completed_fields_check',
   'claims_completed_after_pickup_check',
+  'donation_status_history_cancelled_fields_check',
 ];
+
+const BACKEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
 const FIXTURE = {
   adminUser: '9a000000-0000-4000-8000-000000000001',
@@ -118,6 +123,7 @@ const FIXTURE = {
   invalidReviewedDocument: '9e000000-0000-4000-8000-000000000002',
   invalidRejectedDocument: '9e000000-0000-4000-8000-000000000003',
   invalidSecondCurrentDocument: '9e000000-0000-4000-8000-000000000004',
+  invalidCancelledHistory: '9f000000-0000-4000-8000-000000000001',
 } as const;
 
 const FIXTURE_ORGANISATION_IDS = [
@@ -157,6 +163,144 @@ const SEEDED_LOGINS = [
   { email: 'ngo.verified2@food-demo.test', password: 'Demo1234!' },
   { email: 'ngo.rejected@food-demo.test', password: 'Demo1234!' },
 ];
+
+const SEEDED_ROW_COUNTS: SeededRowCounts = {
+  users: 7,
+  organisations: 6,
+  documents: 12,
+  donations: 6,
+  claims: 5,
+  history: 17,
+  notifications: 12,
+  unreadNotifications: 10,
+};
+
+interface SeededRowCounts {
+  readonly users: number;
+  readonly organisations: number;
+  readonly documents: number;
+  readonly donations: number;
+  readonly claims: number;
+  readonly history: number;
+  readonly notifications: number;
+  readonly unreadNotifications: number;
+}
+
+interface SeedCountRow {
+  readonly users: bigint;
+  readonly organisations: bigint;
+  readonly documents: bigint;
+  readonly donations: bigint;
+  readonly claims: bigint;
+  readonly history: bigint;
+  readonly notifications: bigint;
+  readonly unread_notifications: bigint;
+}
+
+interface SeedRunResult {
+  readonly status: number | null;
+  readonly stdout: string;
+  readonly stderr: string;
+}
+
+function runSeed(envOverrides: NodeJS.ProcessEnv = {}): SeedRunResult {
+  const result = spawnSync(process.execPath, ['prisma/seed.ts'], {
+    cwd: BACKEND_ROOT,
+    env: { ...process.env, ...envOverrides },
+    encoding: 'utf8',
+  });
+
+  if (result.error !== undefined) {
+    throw result.error;
+  }
+
+  return {
+    status: result.status,
+    stdout: result.stdout,
+    stderr: result.stderr,
+  };
+}
+
+function assertSeedSucceeded(result: SeedRunResult): void {
+  assert.equal(
+    result.status,
+    0,
+    `Seed failed with status ${String(result.status)}: ${result.stderr}`,
+  );
+}
+
+interface PrismaRawError {
+  readonly sqlState: string;
+  readonly message: string;
+}
+
+function readPrismaRawError(error: unknown): PrismaRawError {
+  assert.ok(error instanceof Error, 'Expected an Error.');
+
+  const meta = Reflect.get(error, 'meta');
+  assert.ok(isRecord(meta), 'Expected a Prisma raw-query error with meta.');
+
+  const sqlState = meta.code;
+  const message = meta.message;
+
+  if (typeof sqlState !== 'string' || typeof message !== 'string') {
+    assert.fail('Expected a PostgreSQL SQLSTATE and message.');
+  }
+
+  return { sqlState, message };
+}
+
+function rejectsCheckViolation(constraint: string) {
+  return (error: unknown): true => {
+    const { sqlState, message } = readPrismaRawError(error);
+    assert.equal(sqlState, '23514', `Expected a CHECK violation, got ${sqlState}: ${message}`);
+    assert.match(message, new RegExp(`violates check constraint "${constraint}"`));
+    return true;
+  };
+}
+
+function rejectsUniqueViolation(columns: string) {
+  return (error: unknown): true => {
+    const { sqlState, message } = readPrismaRawError(error);
+    assert.equal(sqlState, '23505', `Expected a unique violation, got ${sqlState}: ${message}`);
+    assert.match(message, new RegExp(`Key \\(${columns}\\)=`));
+    return true;
+  };
+}
+
+async function readSeededRowCounts(): Promise<SeededRowCounts> {
+  const rows = await prisma.$queryRaw<SeedCountRow[]>`
+    SELECT
+      (SELECT count(*) FROM "users" WHERE "id"::text LIKE '00000000%') AS "users",
+      (
+        SELECT count(*) FROM "organisations"
+        WHERE "id"::text LIKE '10000000%' OR "id"::text LIKE '20000000%'
+      ) AS "organisations",
+      (SELECT count(*) FROM "verification_documents" WHERE "id"::text LIKE '50000000%') AS "documents",
+      (SELECT count(*) FROM "donations" WHERE "id"::text LIKE '30000000%') AS "donations",
+      (SELECT count(*) FROM "claims" WHERE "id"::text LIKE '40000000%') AS "claims",
+      (SELECT count(*) FROM "donation_status_history" WHERE "id"::text LIKE '70000000%') AS "history",
+      (SELECT count(*) FROM "notifications" WHERE "id"::text LIKE '60000000%') AS "notifications",
+      (
+        SELECT count(*) FROM "notifications"
+        WHERE "id"::text LIKE '60000000%' AND "read_at" IS NULL
+      ) AS "unread_notifications"
+  `;
+
+  const row = rows[0];
+  assert.ok(row !== undefined);
+
+  return {
+    users: Number(row.users),
+    organisations: Number(row.organisations),
+    documents: Number(row.documents),
+    donations: Number(row.donations),
+    claims: Number(row.claims),
+    history: Number(row.history),
+    notifications: Number(row.notifications),
+    unreadNotifications: Number(row.unread_notifications),
+  };
+}
 
 async function cleanupFixtures(): Promise<void> {
   await prisma.organisation.updateMany({
@@ -485,7 +629,7 @@ test('raw SQL cannot bypass partial indexes or CHECK constraints', { skip: datab
           now()
         )
       `,
-      'An admin with an organisation must be rejected.',
+      rejectsCheckViolation('users_role_organisation_check'),
     );
 
     await assert.rejects(
@@ -502,7 +646,7 @@ test('raw SQL cannot bypass partial indexes or CHECK constraints', { skip: datab
           now()
         )
       `,
-      'A donor without an organisation must be rejected.',
+      rejectsCheckViolation('users_role_organisation_check'),
     );
 
     await assert.rejects(
@@ -519,7 +663,7 @@ test('raw SQL cannot bypass partial indexes or CHECK constraints', { skip: datab
           now()
         )
       `,
-      'A second user for the same organisation must be rejected.',
+      rejectsUniqueViolation('organisation_id'),
     );
 
     await assert.rejects(
@@ -536,7 +680,7 @@ test('raw SQL cannot bypass partial indexes or CHECK constraints', { skip: datab
           now()
         )
       `,
-      'A duplicate login email must be rejected.',
+      rejectsUniqueViolation('email'),
     );
 
     // organisations
@@ -561,7 +705,7 @@ test('raw SQL cannot bypass partial indexes or CHECK constraints', { skip: datab
           now()
         )
       `,
-      'A verified organisation without verification fields must be rejected.',
+      rejectsCheckViolation('organisations_verified_fields_check'),
     );
 
     await assert.rejects(
@@ -585,7 +729,7 @@ test('raw SQL cannot bypass partial indexes or CHECK constraints', { skip: datab
           now()
         )
       `,
-      'A rejected organisation without a reason must be rejected.',
+      rejectsCheckViolation('organisations_rejected_reason_check'),
     );
 
     await assert.rejects(
@@ -612,7 +756,7 @@ test('raw SQL cannot bypass partial indexes or CHECK constraints', { skip: datab
           now()
         )
       `,
-      'A pending organisation with verification fields must be rejected.',
+      rejectsCheckViolation('organisations_pending_fields_check'),
     );
 
     // donations
@@ -642,7 +786,7 @@ test('raw SQL cannot bypass partial indexes or CHECK constraints', { skip: datab
           now()
         )
       `,
-      'A pickup window whose start is not before its end must be rejected.',
+      rejectsCheckViolation('donations_window_order_check'),
     );
 
     await assert.rejects(
@@ -671,7 +815,7 @@ test('raw SQL cannot bypass partial indexes or CHECK constraints', { skip: datab
           now()
         )
       `,
-      'A pickup window ending after best-before must be rejected.',
+      rejectsCheckViolation('donations_window_before_best_before_check'),
     );
 
     await assert.rejects(
@@ -700,7 +844,7 @@ test('raw SQL cannot bypass partial indexes or CHECK constraints', { skip: datab
           now()
         )
       `,
-      'A donation with quantity zero must be rejected.',
+      rejectsCheckViolation('donations_quantity_positive_check'),
     );
 
     await assert.rejects(
@@ -729,7 +873,7 @@ test('raw SQL cannot bypass partial indexes or CHECK constraints', { skip: datab
           now()
         )
       `,
-      'A cancelled donation without actor, timestamp and reason must be rejected.',
+      rejectsCheckViolation('donations_cancelled_fields_check'),
     );
 
     await assert.rejects(
@@ -758,7 +902,7 @@ test('raw SQL cannot bypass partial indexes or CHECK constraints', { skip: datab
           now()
         )
       `,
-      'A completed donation without completed_at must be rejected.',
+      rejectsCheckViolation('donations_completed_at_check'),
     );
 
     // claims
@@ -778,7 +922,7 @@ test('raw SQL cannot bypass partial indexes or CHECK constraints', { skip: datab
           now()
         )
       `,
-      'A second active claim for the same donation must be rejected.',
+      rejectsUniqueViolation('donation_id'),
     );
 
     await assert.rejects(
@@ -797,7 +941,7 @@ test('raw SQL cannot bypass partial indexes or CHECK constraints', { skip: datab
           now()
         )
       `,
-      'A cancelled claim without actor, timestamp and reason must be rejected.',
+      rejectsCheckViolation('claims_cancelled_fields_check'),
     );
 
     await assert.rejects(
@@ -816,7 +960,7 @@ test('raw SQL cannot bypass partial indexes or CHECK constraints', { skip: datab
           now()
         )
       `,
-      'A completed claim without pickup and completion timestamps must be rejected.',
+      rejectsCheckViolation('claims_completed_fields_check'),
     );
 
     // verification documents
@@ -840,7 +984,7 @@ test('raw SQL cannot bypass partial indexes or CHECK constraints', { skip: datab
           now()
         )
       `,
-      'A reviewed document without reviewer and timestamp must be rejected.',
+      rejectsCheckViolation('verification_documents_review_fields_check'),
     );
 
     await assert.rejects(
@@ -866,7 +1010,7 @@ test('raw SQL cannot bypass partial indexes or CHECK constraints', { skip: datab
           now()
         )
       `,
-      'A rejected document without a review note must be rejected.',
+      rejectsCheckViolation('verification_documents_rejection_note_check'),
     );
 
     await assert.rejects(
@@ -889,7 +1033,27 @@ test('raw SQL cannot bypass partial indexes or CHECK constraints', { skip: datab
           now()
         )
       `,
-      'A second current document of the same type must be rejected.',
+      rejectsUniqueViolation('organisation_id, document_type'),
+    );
+
+    // donation status history
+    await assert.rejects(
+      prisma.$executeRaw`
+        INSERT INTO "donation_status_history" (
+          "id", "donation_id", "from_status", "to_status", "changed_by_user_id", "reason", "created_at"
+        )
+        VALUES (
+          ${FIXTURE.invalidCancelledHistory}::uuid,
+          ${FIXTURE.donation}::uuid,
+          'claimed'::donation_status,
+          'cancelled'::donation_status,
+          NULL,
+          NULL,
+          now()
+        )
+      `,
+      rejectsCheckViolation('donation_status_history_cancelled_fields_check'),
+      'A cancellation history row without an actor and reason must be rejected.',
     );
   } finally {
     await cleanupFixtures();
@@ -941,4 +1105,44 @@ test('the live database ping reports ready', { skip: databaseSkip }, async () =>
   );
 
   assert.equal(await readiness(), true);
+});
+
+test('the seed is idempotent and contains the documented demo data', { skip: databaseSkip }, async () => {
+  assertSeedSucceeded(runSeed());
+
+  const firstCounts = await readSeededRowCounts();
+  assert.deepEqual(firstCounts, SEEDED_ROW_COUNTS);
+
+  assertSeedSucceeded(runSeed());
+
+  const secondCounts = await readSeededRowCounts();
+  assert.deepEqual(secondCounts, SEEDED_ROW_COUNTS);
+
+  const donations = await prisma.$queryRaw<Array<{ status: string; photo_storage_key: string | null }>>`
+    SELECT "status"::text AS "status", "photo_storage_key"
+    FROM "donations"
+    WHERE "id"::text LIKE '30000000%'
+  `;
+
+  assert.deepEqual(
+    [...new Set(donations.map((donation) => donation.status))].sort(),
+    ['available', 'cancelled', 'claimed', 'completed', 'expired', 'picked_up'],
+  );
+  assert.equal(donations.every((donation) => donation.photo_storage_key === null), true);
+
+  const notifications = await prisma.$queryRaw<Array<{ emailed_at: Date | null }>>`
+    SELECT "emailed_at"
+    FROM "notifications"
+    WHERE "id"::text LIKE '60000000%'
+  `;
+
+  assert.equal(notifications.every((notification) => notification.emailed_at === null), true);
+});
+
+test('the seed refuses to run in production', { skip: databaseSkip }, () => {
+  const result = runSeed({ NODE_ENV: 'production' });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Refusing to seed: NODE_ENV=production/);
+  assert.doesNotMatch(result.stdout, /Demo seed complete/);
 });

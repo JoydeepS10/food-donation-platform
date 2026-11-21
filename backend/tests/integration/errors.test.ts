@@ -36,6 +36,45 @@ function readErrorBody(value: unknown): ErrorBody {
   };
 }
 
+const FUTURE_OPERATIONS = [
+  { method: 'POST', path: '/auth/register' },
+  { method: 'POST', path: '/auth/login' },
+  { method: 'POST', path: '/auth/logout' },
+  { method: 'GET', path: '/auth/me' },
+  { method: 'GET', path: '/donations' },
+  { method: 'POST', path: '/donations' },
+  { method: 'GET', path: '/donations/11111111-1111-4111-8111-111111111111' },
+  { method: 'PATCH', path: '/donations/11111111-1111-4111-8111-111111111111' },
+  { method: 'POST', path: '/donations/11111111-1111-4111-8111-111111111111/cancel' },
+  { method: 'POST', path: '/donations/11111111-1111-4111-8111-111111111111/claims' },
+  { method: 'PATCH', path: '/donations/11111111-1111-4111-8111-111111111111/status' },
+  { method: 'GET', path: '/claims/me' },
+  { method: 'GET', path: '/organisations/me' },
+  { method: 'PATCH', path: '/organisations/me' },
+  { method: 'POST', path: '/organisations/me/documents' },
+  {
+    method: 'GET',
+    path: '/organisations/me/documents/11111111-1111-4111-8111-111111111111/download',
+  },
+  { method: 'POST', path: '/organisations/me/verification' },
+  { method: 'GET', path: '/admin/organisations' },
+  {
+    method: 'GET',
+    path: '/admin/organisations/11111111-1111-4111-8111-111111111111',
+  },
+  {
+    method: 'GET',
+    path: '/admin/organisations/11111111-1111-4111-8111-111111111111/documents/11111111-1111-4111-8111-111111111112/download',
+  },
+  {
+    method: 'POST',
+    path: '/admin/organisations/11111111-1111-4111-8111-111111111111/verification',
+  },
+  { method: 'GET', path: '/notifications' },
+  { method: 'POST', path: '/notifications/11111111-1111-4111-8111-111111111111/read' },
+  { method: 'POST', path: '/notifications/read-all' },
+] as const;
+
 test('an unknown route returns the shared error envelope', async (t) => {
   const server = await startTestServer(testConfig());
   t.after(async () => {
@@ -75,17 +114,44 @@ test('malformed JSON returns BAD_REQUEST and keeps the request id', async (t) =>
   assert.doesNotMatch(JSON.stringify(body), /SyntaxError|at .*:\\d+:\\d+/);
 });
 
+test('an oversized JSON body returns FILE_TOO_LARGE', async (t) => {
+  const server = await startTestServer(testConfig());
+  t.after(async () => {
+    await server.close();
+  });
+
+  const response = await fetch(`${server.baseUrl}/api/v1/health`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ padding: 'x'.repeat(120 * 1024) }),
+  });
+
+  assert.equal(response.status, 413);
+
+  const body: unknown = await response.json();
+  const error = readErrorBody(body);
+  assert.equal(error.code, 'FILE_TOO_LARGE');
+  assert.equal(response.headers.get('x-request-id'), error.requestId);
+});
+
 test('no future-slice route is mounted', async (t) => {
   const server = await startTestServer(testConfig());
   t.after(async () => {
     await server.close();
   });
 
-  const paths = ['/api/v1/auth/me', '/api/v1/donations', '/api/v1/claims/me', '/api/v1/notifications'];
+  for (const operation of FUTURE_OPERATIONS) {
+    const response = await fetch(`${server.baseUrl}/api/v1${operation.path}`, {
+      method: operation.method,
+    });
 
-  for (const path of paths) {
-    const response = await fetch(`${server.baseUrl}${path}`);
-    assert.equal(response.status, 404, `Expected 404 for ${path}`);
+    assert.equal(
+      response.status,
+      404,
+      `Expected 404 for ${operation.method} ${operation.path}`,
+    );
   }
 });
 
